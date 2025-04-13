@@ -16,29 +16,46 @@ plt.rcParams.update(
 sns.set_style("whitegrid")
 
 # 1. 配置路径
-data_folder = Path("your_data_folder_path")  # 替换为你的数据文件夹路径
-output_folder = Path("output_figures")  # 图表输出文件夹
+data_folder = Path("C:/Users/East/Desktop/10G_data_new")  # 数据文件夹路径
+output_folder = Path("C:/Users/East/Desktop/数据挖掘/outputs")  # 图表输出文件夹
 
 # 创建输出文件夹（如果不存在）
 output_folder.mkdir(parents=True, exist_ok=True)
 
+# 定义需要读取的列
+REQUIRED_COLS = ['age', 'income', 'gender']
+
 
 # 2. 读取Parquet文件
 def read_parquet_files(folder_path):
-    """从指定文件夹读取所有.parquet文件并合并为一个DataFrame"""
+    """从指定文件夹读取所有.parquet文件并合并为一个DataFrame，只读取所需列"""
     parquet_files = list(folder_path.glob("*.parquet"))
     if not parquet_files:
         raise FileNotFoundError(f"No parquet files found in {folder_path}")
 
     dfs = []
     for file in parquet_files:
-        df = pd.read_parquet(file)
-        # 检查必要列是否存在
-        required_cols = {'age', 'income', 'gender', 'credit_score'}
-        if not required_cols.issubset(df.columns):
-            missing = required_cols - set(df.columns)
-            raise ValueError(f"File {file.name} is missing columns: {missing}")
-        dfs.append(df)
+        # 首先检查文件是否包含所需列
+        try:
+            # 读取文件元数据而不加载全部数据
+            file_metadata = pd.read_parquet(file, engine='pyarrow').columns
+            available_cols = set(file_metadata)
+
+            # 检查必要列是否存在
+            missing_cols = set(REQUIRED_COLS) - available_cols
+            if missing_cols:
+                raise ValueError(f"File {file.name} is missing columns: {missing_cols}")
+
+            # 只读取需要的列
+            df = pd.read_parquet(file, columns=REQUIRED_COLS)
+            dfs.append(df)
+
+        except Exception as e:
+            print(f"Error processing file {file.name}: {str(e)}")
+            continue
+
+    if not dfs:
+        raise ValueError("No valid data files found with all required columns")
 
     combined_df = pd.concat(dfs, ignore_index=True)
 
@@ -50,7 +67,7 @@ def read_parquet_files(folder_path):
     return combined_df
 
 
-# 3. 绘图函数
+# 3. 绘图函数（保持不变）
 def plot_age_distribution(data, save_path):
     """绘制年龄分布直方图并保存"""
     plt.figure(figsize=(10, 6))
@@ -65,32 +82,6 @@ def plot_age_distribution(data, save_path):
     plt.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close()
     print(f"Saved age distribution plot to: {output_file}")
-
-
-def plot_credit_vs_income(data, save_path):
-    """绘制信用评分vs收入六边形分箱图并保存"""
-    plt.figure(figsize=(12, 8))
-    hb = plt.hexbin(
-        data['credit_score'],
-        data['income'],
-        gridsize=50,
-        cmap='viridis',
-        bins='log',
-        mincnt=1,  # 避免空箱显示警告
-    )
-    cb = plt.colorbar(hb, label='Log10(Count)')
-    cb.ax.yaxis.set_label_position('left')
-
-    plt.title('Credit Score vs. Income Distribution', fontsize=14, pad=20)
-    plt.xlabel('Credit Score', fontsize=12)
-    plt.ylabel('Income ($)', fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.5)
-
-    # 保存图片
-    output_file = save_path / "credit_vs_income_hexbin.png"
-    plt.savefig(output_file, bbox_inches='tight', dpi=300)
-    plt.close()
-    print(f"Saved credit vs income plot to: {output_file}")
 
 
 def plot_age_income_quantiles(data, save_path):
@@ -169,7 +160,7 @@ try:
 
     # 生成并保存图表
     plot_age_distribution(df, output_folder)
-    plot_credit_vs_income(df, output_folder)
+
     plot_age_income_quantiles(df, output_folder)
 
     print("\nAll plots generated successfully!")
